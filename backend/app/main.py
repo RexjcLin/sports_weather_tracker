@@ -1,8 +1,13 @@
 """FastAPI application entry point."""
 
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.v1.weather import router as weather_router
 from app.database import init_db

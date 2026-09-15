@@ -4,8 +4,13 @@
 """
 
 import logging
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -133,7 +138,7 @@ async def generate_activity_recommendations():
     
     try:
         async with get_db_session() as db:
-            from sqlalchemy import select
+            from sqlalchemy import select, and_
             from app.models import Activities
             
             # 查詢最近 24 小時內完成的運動（還沒有建議的）
