@@ -325,16 +325,15 @@ async def update_location_weather(
         更新結果
     """
     try:
-        weather_service = CWBWeatherService()
-        
-        # 更新即時天氣
-        current = await weather_service.get_current_weather(location_name, db)
-        
-        # 更新預報
-        forecasts = await weather_service.get_weather_forecast(location_name, db)
-        
-        # 更新警告
-        alerts = await weather_service.get_weather_alerts(location_name, db)
+        async with CWBWeatherService() as weather_service:
+            # 更新即時天氣
+            current = await weather_service.get_current_weather(location_name, db)
+
+            # 更新預報
+            forecasts = await weather_service.get_weather_forecast(location_name, db)
+
+            # 更新警告
+            alerts = await weather_service.get_weather_alerts(location_name, db)
         
         return {
             "status": "success",

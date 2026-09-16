@@ -5,11 +5,13 @@
 
 import asyncio
 import logging
+import ssl
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 from decimal import Decimal
 
 import aiohttp
+import certifi
 from sqlalchemy import select, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,15 +19,17 @@ from app.models import CurrentWeather, WeatherForecast, WeatherHistory, WeatherA
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+SSL_CONTEXT.verify_flags &= ~ssl.VERIFY_X509_STRICT
 
 
 class CWBWeatherService:
     """中央氣象局天氣服務"""
     
     # 中央氣象局 API 端點
-    OBSERVATION_API = "https://opendata.cwb.gov.tw/api/v1/rest/datastore/O-A0003-001"
-    FORECAST_API = "https://opendata.cwb.gov.tw/api/v1/rest/datastore/F-C0032-001"
-    WARNING_API = "https://opendata.cwb.gov.tw/api/v1/rest/datastore/W-C0033-001"
+    OBSERVATION_API = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001"
+    FORECAST_API = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001"
+    WARNING_API = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/W-C0033-001"
     
     # 台灣主要城市座標（經度, 緯度）
     MAJOR_CITIES = {
@@ -85,7 +89,12 @@ class CWBWeatherService:
         
         try:
             params["Authorization"] = self.api_key
-            async with self.session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            async with self.session.get(
+                url,
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=10),
+                ssl=SSL_CONTEXT,
+            ) as resp:
                 if resp.status == 200:
                     return await resp.json()
                 else:
@@ -119,25 +128,55 @@ class CWBWeatherService:
         params = {"locationName": location_name, "elementName": "TEMP,HUMD,WDSD,PRES,VIS,RH"}
         data = await self._make_request(self.OBSERVATION_API, params)
         
-        if not data or "records" not in data or not data["records"]["location"]:
+        if not data or "records" not in data:
             logger.warning(f"無法獲取 {location_name} 的天氣數據")
             return None
         
         try:
-            location_data = data["records"]["location"][0]
-            weather_elements = {elem["elementName"]: elem["elementValue"] 
-                              for elem in location_data["weatherElement"]}
+            records = data["records"]
+            if records.get("location"):
+                location_data = records["location"][0]
+                weather_elements = {
+                    elem["elementName"]: elem["elementValue"]
+                    for elem in location_data["weatherElement"]
+                }
+            else:
+                stations = records.get("Station", [])
+                location_key = location_name.replace("台", "臺").replace("市", "")
+                station = next(
+                    (
+                        item for item in stations
+                        if location_key in item.get("StationName", "")
+                    ),
+                    None,
+                )
+                if station is None:
+                    logger.warning(f"找不到 {location_name} 對應的觀測站")
+                    return None
+                weather_elements = station["WeatherElement"]
             
             # 創建天氣記錄
             weather = CurrentWeather(
                 location_name=location_name,
                 latitude=Decimal(str(lat)),
                 longitude=Decimal(str(lon)),
-                temperature=Decimal(weather_elements.get("TEMP", 0)),
-                humidity=int(weather_elements.get("HUMD", 0)),
-                wind_speed=Decimal(weather_elements.get("WDSD", 0)),
-                pressure=int(weather_elements.get("PRES", 0)),
-                visibility=int(weather_elements.get("VIS", 0)) if weather_elements.get("VIS") else None,
+                temperature=Decimal(
+                    weather_elements.get("TEMP", weather_elements.get("AirTemperature", 0))
+                ),
+                humidity=int(
+                    weather_elements.get("HUMD", weather_elements.get("RelativeHumidity", 0))
+                ),
+                wind_speed=Decimal(
+                    weather_elements.get("WDSD", weather_elements.get("WindSpeed", 0))
+                ),
+                pressure=int(
+                    float(weather_elements.get("PRES", weather_elements.get("AirPressure", 0)))
+                ),
+                visibility=(
+                    int(weather_elements["VIS"])
+                    if weather_elements.get("VIS")
+                    else None
+                ),
                 weather_main="Clear",  # 需要進一步解析
                 weather_description="晴天",
                 data_time=datetime.now(),
@@ -179,32 +218,59 @@ class CWBWeatherService:
         }
         data = await self._make_request(self.FORECAST_API, params)
         
-        if not data or "records" not in data or not data["records"]["location"]:
+        if not data or "records" not in data:
             logger.warning(f"無法獲取 {location_name} 的預報數據")
             return []
         
         forecasts = []
         try:
-            location_data = data["records"]["location"][0]
+            records = data["records"]
+            locations = records.get("location", [])
+            if not locations:
+                location_groups = records.get("locations", records.get("Locations", []))
+                for group in location_groups:
+                    locations.extend(group.get("location", group.get("Location", [])))
+
+            normalized_location = location_name.replace("臺", "台").replace("市", "").replace("縣", "")
+            location_data = next(
+                (
+                    item for item in locations
+                    if item.get("locationName", "").replace("臺", "台").replace("市", "").replace("縣", "")
+                    == normalized_location
+                ),
+                None,
+            )
+            if location_data is None:
+                logger.warning(f"找不到 {location_name} 的預報位置")
+                return []
             
             # 處理預報時段
+            max_temps = {}
+            min_temps = {}
+            pops = {}
             for weather_element in location_data["weatherElement"]:
                 if weather_element["elementName"] == "MaxT":
-                    max_temps = {item["startTime"][:13]: item["elementValue"] 
-                               for item in weather_element["time"]}
+                    max_temps = {
+                        item["startTime"]: item["elementValue"]
+                        for item in weather_element["time"]
+                    }
                 elif weather_element["elementName"] == "MinT":
-                    min_temps = {item["startTime"][:13]: item["elementValue"] 
-                               for item in weather_element["time"]}
+                    min_temps = {
+                        item["startTime"]: item["elementValue"]
+                        for item in weather_element["time"]
+                    }
                 elif weather_element["elementName"] == "PoP":
-                    pops = {item["startTime"][:13]: item["elementValue"] 
-                          for item in weather_element["time"]}
+                    pops = {
+                        item["startTime"]: item["elementValue"]
+                        for item in weather_element["time"]
+                    }
             
             # 創建預報記錄
             for time_str, max_temp in max_temps.items():
-                min_temp = min_temps.get(time_str, 0)
-                pop = pops.get(time_str, 0)
+                min_temp = min_temps.get(time_str, "0")
+                pop = pops.get(time_str, "0")
                 
-                forecast_time = datetime.strptime(time_str, "%Y%m%d%H")
+                forecast_time = datetime.fromisoformat(time_str.replace("Z", "+00:00")).replace(tzinfo=None)
                 
                 forecast = WeatherForecast(
                     location_name=location_name,
@@ -252,13 +318,13 @@ class CWBWeatherService:
         # 調用 API 獲取警告資料
         data = await self._make_request(self.WARNING_API, {})
         
-        if not data or "records" not in data or not data["records"]["warning"]:
+        if not data or "records" not in data:
             logger.info(f"無警告信息 - {location_name}")
             return []
         
         alerts = []
         try:
-            for warning_data in data["records"]["warning"]:
+            for warning_data in data["records"].get("warning", []):
                 # 檢查警告是否適用於該位置
                 if location_name in warning_data.get("areaDesc", ""):
                     alert = WeatherAlerts(

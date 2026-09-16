@@ -11,13 +11,20 @@ if __package__ in {None, ""}:
 
 from app.api.v1.weather import router as weather_router
 from app.database import init_db
+from app.tasks.scheduler import configure_scheduler, get_scheduler_manager
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     """Initialize local database tables when the application starts."""
     await init_db()
-    yield
+    scheduler_manager = get_scheduler_manager()
+    configure_scheduler()
+    scheduler_manager.start()
+    try:
+        yield
+    finally:
+        scheduler_manager.stop()
 
 
 app = FastAPI(
