@@ -64,8 +64,8 @@ async def update_weather_data():
     
     try:
         async with get_db_session() as db:
-            weather_service = CWBWeatherService()
-            await weather_service.update_all_locations(db)
+            async with CWBWeatherService() as weather_service:
+                await weather_service.update_all_locations(db)
             logger.info("天氣數據更新完成")
     except Exception as e:
         logger.error(f"天氣數據更新失敗: {str(e)}")
@@ -156,9 +156,9 @@ async def generate_activity_recommendations():
             
             for activity in activities:
                 try:
-                    await recommendation_engine.generate_recommendation(activity.activity_id, db)
+                    await recommendation_engine.generate_recommendation(activity.id, db)
                 except Exception as e:
-                    logger.error(f"為活動 {activity.activity_id} 生成建議失敗: {str(e)}")
+                    logger.error(f"為活動 {activity.id} 生成建議失敗: {str(e)}")
             
             logger.info(f"已為 {len(activities)} 個運動生成建議")
             

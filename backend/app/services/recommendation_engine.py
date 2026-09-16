@@ -430,4 +430,8 @@ class RecommendationEngine:
         db: AsyncSession
     ) -> Optional[WeatherRecommendations]:
         """獲取運動的天氣建議"""
-        return await db.get(WeatherRecommendations, activity_id)
+        stmt = select(WeatherRecommendations).where(
+            WeatherRecommendations.activity_id == activity_id
+        )
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()

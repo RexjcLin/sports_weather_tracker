@@ -122,6 +122,7 @@ class CurrentWeather(Base):
     pressure: Mapped[Optional[int]] = mapped_column(Integer)
     wind_speed: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     wind_direction: Mapped[Optional[int]] = mapped_column(Integer)
+    wind_direction_description: Mapped[Optional[str]] = mapped_column(String(20))
     wind_gust: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     precipitation: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
     precipitation_probability: Mapped[Optional[int]] = mapped_column(Integer)
@@ -133,7 +134,6 @@ class CurrentWeather(Base):
     weather_icon: Mapped[Optional[str]] = mapped_column(String(50))
     data_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
 
 class WeatherForecast(Base):
     __tablename__ = "weather_forecast"
@@ -148,7 +148,9 @@ class WeatherForecast(Base):
     temperature: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     humidity: Mapped[Optional[int]] = mapped_column(Integer)
     wind_speed: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    wind_direction: Mapped[Optional[int]] = mapped_column(Integer)
     precipitation_probability: Mapped[Optional[int]] = mapped_column(Integer)
+    precipitation_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
     weather_main: Mapped[Optional[str]] = mapped_column(String(50))
     weather_description: Mapped[Optional[str]] = mapped_column(String(200))
     forecast_issued_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

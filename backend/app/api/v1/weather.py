@@ -362,8 +362,8 @@ async def update_all_weather(
         更新結果
     """
     try:
-        weather_service = CWBWeatherService()
-        await weather_service.update_all_locations(db)
+        async with CWBWeatherService() as weather_service:
+            await weather_service.update_all_locations(db)
         
         return {
             "status": "success",

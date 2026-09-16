@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import re
 import ssl
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
@@ -52,6 +53,19 @@ class CWBWeatherService:
         "花蓮縣": (121.5090, 23.9727),
         "台東縣": (121.1440, 22.7692),
     }
+
+    STATION_ALIASES = {
+        "新竹縣": ("新竹",),
+        "苗栗縣": ("苗栗",),
+        "彰化縣": ("彰化",),
+        "南投縣": ("南投",),
+        "雲林縣": ("斗六", "雲林"),
+        "嘉義縣": ("嘉義",),
+        "屏東縣": ("屏東",),
+        "宜蘭縣": ("宜蘭",),
+        "花蓮縣": ("花蓮",),
+        "台東縣": ("臺東", "台東"),
+    }
     
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -66,6 +80,15 @@ class CWBWeatherService:
     @staticmethod
     def _normalize_location_name(location_name: str) -> str:
         return location_name.replace("臺", "台").replace("市", "").replace("縣", "")
+
+    @classmethod
+    def _station_matches_location(cls, station_name: str, location_name: str) -> bool:
+        normalized_station = cls._normalize_location_name(station_name)
+        normalized_location = cls._normalize_location_name(location_name)
+        if normalized_location in normalized_station:
+            return True
+        aliases = cls.STATION_ALIASES.get(location_name, ())
+        return any(cls._normalize_location_name(alias) in normalized_station for alias in aliases)
 
     def _find_forecast_location(self, data: object, location_name: str) -> Optional[Dict]:
         """Find a CWA forecast location across legacy and current response shapes."""
@@ -102,6 +125,56 @@ class CWBWeatherService:
         if isinstance(value, dict):
             value = next((item for item in value.values() if item is not None), None)
         return str(value) if value is not None else None
+
+    @staticmethod
+    def _number_or_none(value: object) -> Optional[Decimal]:
+        """Convert CWA scalar values to Decimal without treating missing data as zero."""
+        if value in (None, "", "-9", "-99", "-990", "-999", "-9999"):
+            return None
+        try:
+            number = Decimal(str(value))
+            if number in (Decimal("-9"), Decimal("-99"), Decimal("-990"), Decimal("-999"), Decimal("-9999")):
+                return None
+            return number
+        except Exception:
+            return None
+
+    @staticmethod
+    def _station_precipitation(weather_elements: Dict) -> Optional[Decimal]:
+        """Read precipitation from legacy and current CWA station payloads."""
+        precipitation = weather_elements.get("RAIN", weather_elements.get("Precipitation"))
+        if precipitation is None:
+            now = weather_elements.get("Now", {})
+            if isinstance(now, dict):
+                precipitation = now.get("Precipitation", now.get("Rainfall"))
+        return CWBWeatherService._number_or_none(precipitation)
+
+    @staticmethod
+    def _station_visibility(weather_elements: Dict) -> Optional[int]:
+        """Convert CWA legacy numeric or current text visibility values to metres."""
+        visibility = weather_elements.get("VIS", weather_elements.get("VisibilityDescription"))
+        numeric_value = CWBWeatherService._number_or_none(visibility)
+        if numeric_value is not None:
+            return int(numeric_value)
+        if not isinstance(visibility, str):
+            return None
+        match = re.search(r"\d+(?:\.\d+)?", visibility)
+        if match is None:
+            return None
+        value = Decimal(match.group())
+        if "公里" in visibility or "km" in visibility.lower():
+            value *= 1000
+        return int(value)
+
+    @staticmethod
+    def _wind_direction_description(value: Optional[Decimal]) -> Optional[str]:
+        if value is None:
+            return None
+        directions = (
+            "北風", "東北風", "東風", "東南風",
+            "南風", "西南風", "西風", "西北風",
+        )
+        return directions[int((float(value) + 22.5) // 45) % 8]
     
     async def __aenter__(self):
         """異步上下文管理器入口"""
@@ -166,7 +239,7 @@ class CWBWeatherService:
         cwa_location_name = location_name.replace("台", "臺")
         
         # 調用 API 獲取資料
-        params = {"locationName": cwa_location_name, "elementName": "TEMP,HUMD,WDSD,PRES,VIS,RH"}
+        params = {"elementName": "TEMP,HUMD,WDSD,PRES,VIS,RH,RAIN"}
         data = await self._make_request(self.OBSERVATION_API, params)
         
         if not data or "records" not in data:
@@ -183,11 +256,12 @@ class CWBWeatherService:
                 }
             else:
                 stations = records.get("Station", [])
-                location_key = location_name.replace("台", "臺").replace("市", "")
                 station = next(
                     (
                         item for item in stations
-                        if location_key in item.get("StationName", "")
+                        if self._station_matches_location(
+                            item.get("StationName", ""), location_name
+                        )
                     ),
                     None,
                 )
@@ -195,31 +269,43 @@ class CWBWeatherService:
                     logger.warning(f"找不到 {location_name} 對應的觀測站")
                     return None
                 weather_elements = station["WeatherElement"]
+
+            humidity = self._number_or_none(
+                weather_elements.get("HUMD", weather_elements.get("RelativeHumidity"))
+            )
+            wind_direction = self._number_or_none(
+                weather_elements.get("WDIR", weather_elements.get("WindDirection"))
+            )
             
             # 創建天氣記錄
+            weather_text = weather_elements.get("Weather", weather_elements.get("weather", "未知"))
+            if isinstance(weather_text, dict):
+                weather_text = weather_text.get("parameterName", weather_text.get("description", "未知"))
+            weather_text = str(weather_text or "未知")
+            weather_main = "Rain" if any(word in weather_text for word in ("雨", "陣雨", "雷雨")) else (
+                "Cloudy" if any(word in weather_text for word in ("雲", "陰")) else "Clear"
+            )
+
             weather = CurrentWeather(
                 location_name=location_name,
                 latitude=Decimal(str(lat)),
                 longitude=Decimal(str(lon)),
-                temperature=Decimal(
-                    weather_elements.get("TEMP", weather_elements.get("AirTemperature", 0))
+                temperature=self._number_or_none(
+                    weather_elements.get("TEMP", weather_elements.get("AirTemperature"))
+                ) or Decimal("0"),
+                humidity=int(humidity) if humidity is not None else 0,
+                wind_speed=self._number_or_none(
+                    weather_elements.get("WDSD", weather_elements.get("WindSpeed"))
+                ) or Decimal("0"),
+                wind_direction=int(wind_direction) if wind_direction is not None else None,
+                wind_direction_description=self._wind_direction_description(wind_direction),
+                pressure=(lambda value: int(value) if value is not None else None)(
+                    self._number_or_none(weather_elements.get("PRES", weather_elements.get("AirPressure")))
                 ),
-                humidity=int(
-                    weather_elements.get("HUMD", weather_elements.get("RelativeHumidity", 0))
-                ),
-                wind_speed=Decimal(
-                    weather_elements.get("WDSD", weather_elements.get("WindSpeed", 0))
-                ),
-                pressure=int(
-                    float(weather_elements.get("PRES", weather_elements.get("AirPressure", 0)))
-                ),
-                visibility=(
-                    int(weather_elements["VIS"])
-                    if weather_elements.get("VIS")
-                    else None
-                ),
-                weather_main="Clear",  # 需要進一步解析
-                weather_description="晴天",
+                precipitation=self._station_precipitation(weather_elements),
+                visibility=self._station_visibility(weather_elements),
+                weather_main=weather_main,
+                weather_description=weather_text,
                 data_time=datetime.now(),
                 fetched_at=datetime.now()
             )

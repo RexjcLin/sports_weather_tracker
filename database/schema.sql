@@ -29,7 +29,9 @@ CREATE TABLE users (
     phone VARCHAR(20) COMMENT '電話號碼',
     date_of_birth DATE COMMENT '出生日期',
     gender ENUM('male', 'female', 'other') COMMENT '性別',
-    country VARCHAR(50) COMMENT '國家',
+    country VARCHAR(50) COMM0
+    .
+    ENT '國家',
     city VARCHAR(50) COMMENT '城市',
     is_active BOOLEAN DEFAULT TRUE COMMENT '帳號是否啟用',
     last_login DATETIME COMMENT '最後登入時間',
@@ -149,6 +151,7 @@ CREATE TABLE current_weather (
     -- 風力數據
     wind_speed DECIMAL(5, 2) NOT NULL COMMENT '風速 (m/s)',
     wind_direction INT COMMENT '風向 (0-360度)',
+    wind_direction_description VARCHAR(20) COMMENT '風向文字描述',
     wind_gust DECIMAL(5, 2) COMMENT '陣風速度 (m/s)',
     
     -- 降水和能見度

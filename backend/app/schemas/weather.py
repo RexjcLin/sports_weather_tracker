@@ -20,6 +20,10 @@ class CurrentWeatherBase(BaseModel):
     temperature: Decimal = Field(..., description="溫度 (°C)")
     humidity: int = Field(..., ge=0, le=100, description="濕度 (%)")
     wind_speed: Decimal = Field(..., ge=0, description="風速 (m/s)")
+    wind_direction: Optional[int] = Field(None, description="風向角度 (0-360度)")
+    wind_direction_description: Optional[str] = Field(
+        None, description="風向文字描述"
+    )
     pressure: int = Field(..., description="氣壓 (hPa)")
     visibility: Optional[int] = Field(None, description="能見度 (公尺)")
     weather_main: str = Field(..., description="天氣主分類")
