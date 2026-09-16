@@ -62,6 +62,46 @@ class CWBWeatherService:
         """
         self.api_key = api_key or settings.CWB_API_KEY
         self.session: Optional[aiohttp.ClientSession] = None
+
+    @staticmethod
+    def _normalize_location_name(location_name: str) -> str:
+        return location_name.replace("臺", "台").replace("市", "").replace("縣", "")
+
+    def _find_forecast_location(self, data: object, location_name: str) -> Optional[Dict]:
+        """Find a CWA forecast location across legacy and current response shapes."""
+        if isinstance(data, dict):
+            candidate_name = data.get("locationName", data.get("LocationName"))
+            weather_elements = data.get("weatherElement", data.get("WeatherElement"))
+            if (
+                isinstance(candidate_name, str)
+                and weather_elements
+                and self._normalize_location_name(candidate_name)
+                == self._normalize_location_name(location_name)
+            ):
+                return data
+            for value in data.values():
+                result = self._find_forecast_location(value, location_name)
+                if result is not None:
+                    return result
+        elif isinstance(data, list):
+            for value in data:
+                result = self._find_forecast_location(value, location_name)
+                if result is not None:
+                    return result
+        return None
+
+    @staticmethod
+    def _get_forecast_value(time_period: Dict) -> Optional[str]:
+        """Extract a scalar value from legacy or current CWA forecast periods."""
+        value = time_period.get("elementValue") or time_period.get("ElementValue")
+        if value is None:
+            parameter = time_period.get("parameter", time_period.get("Parameter", {}))
+            value = parameter.get("parameterName", parameter.get("ParameterName"))
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if isinstance(value, dict):
+            value = next((item for item in value.values() if item is not None), None)
+        return str(value) if value is not None else None
     
     async def __aenter__(self):
         """異步上下文管理器入口"""
@@ -123,9 +163,10 @@ class CWBWeatherService:
             return None
         
         lon, lat = self.MAJOR_CITIES[location_name]
+        cwa_location_name = location_name.replace("台", "臺")
         
         # 調用 API 獲取資料
-        params = {"locationName": location_name, "elementName": "TEMP,HUMD,WDSD,PRES,VIS,RH"}
+        params = {"locationName": cwa_location_name, "elementName": "TEMP,HUMD,WDSD,PRES,VIS,RH"}
         data = await self._make_request(self.OBSERVATION_API, params)
         
         if not data or "records" not in data:
@@ -210,10 +251,11 @@ class CWBWeatherService:
             return []
         
         lon, lat = self.MAJOR_CITIES[location_name]
+        cwa_location_name = location_name.replace("台", "臺")
         
         # 調用 API 獲取預報資料
         params = {
-            "locationName": location_name,
+            "locationName": cwa_location_name,
             "elementName": "Wx,MaxT,MinT,CI,PoP,Wind"
         }
         data = await self._make_request(self.FORECAST_API, params)
@@ -224,22 +266,7 @@ class CWBWeatherService:
         
         forecasts = []
         try:
-            records = data["records"]
-            locations = records.get("location", [])
-            if not locations:
-                location_groups = records.get("locations", records.get("Locations", []))
-                for group in location_groups:
-                    locations.extend(group.get("location", group.get("Location", [])))
-
-            normalized_location = location_name.replace("臺", "台").replace("市", "").replace("縣", "")
-            location_data = next(
-                (
-                    item for item in locations
-                    if item.get("locationName", "").replace("臺", "台").replace("市", "").replace("縣", "")
-                    == normalized_location
-                ),
-                None,
-            )
+            location_data = self._find_forecast_location(data["records"], location_name)
             if location_data is None:
                 logger.warning(f"找不到 {location_name} 的預報位置")
                 return []
@@ -248,21 +275,26 @@ class CWBWeatherService:
             max_temps = {}
             min_temps = {}
             pops = {}
-            for weather_element in location_data["weatherElement"]:
-                if weather_element["elementName"] == "MaxT":
+            for weather_element in location_data.get("weatherElement", location_data.get("WeatherElement", [])):
+                element_name = weather_element.get("elementName", weather_element.get("ElementName"))
+                time_periods = weather_element.get("time", weather_element.get("Time", []))
+                if element_name == "MaxT":
                     max_temps = {
-                        item["startTime"]: item["elementValue"]
-                        for item in weather_element["time"]
+                        item.get("startTime", item.get("StartTime")): self._get_forecast_value(item)
+                        for item in time_periods
+                        if self._get_forecast_value(item) is not None
                     }
-                elif weather_element["elementName"] == "MinT":
+                elif element_name == "MinT":
                     min_temps = {
-                        item["startTime"]: item["elementValue"]
-                        for item in weather_element["time"]
+                        item.get("startTime", item.get("StartTime")): self._get_forecast_value(item)
+                        for item in time_periods
+                        if self._get_forecast_value(item) is not None
                     }
-                elif weather_element["elementName"] == "PoP":
+                elif element_name == "PoP":
                     pops = {
-                        item["startTime"]: item["elementValue"]
-                        for item in weather_element["time"]
+                        item.get("startTime", item.get("StartTime")): self._get_forecast_value(item)
+                        for item in time_periods
+                        if self._get_forecast_value(item) is not None
                     }
             
             # 創建預報記錄

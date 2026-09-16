@@ -108,7 +108,7 @@ async def check_weather_alerts():
     try:
         async with get_db_session() as db:
             from sqlalchemy import select, and_
-            from app.models import WeatherAlerts, Users
+            from app.models import WeatherAlerts
             
             # 查詢活躍警告
             stmt = select(WeatherAlerts).where(

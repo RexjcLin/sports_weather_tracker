@@ -12,6 +12,24 @@ class Base(DeclarativeBase):
     """Base class shared by all database models."""
 
 
+class Users(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column("user_id", Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    first_name: Mapped[Optional[str]] = mapped_column(String(50))
+    last_name: Mapped[Optional[str]] = mapped_column(String(50))
+    city: Mapped[Optional[str]] = mapped_column(String(50))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_login: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class SportModes(Base):
     __tablename__ = "sport_modes"
 
@@ -52,11 +70,17 @@ class Activities(Base):
     planned_duration: Mapped[Optional[int]] = mapped_column(Integer)
     actual_duration: Mapped[Optional[int]] = mapped_column(Integer)
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    total_distance_meters: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    start_latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 8))
+    start_longitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(11, 8))
+    start_location_name: Mapped[Optional[str]] = mapped_column(String(200))
+    end_latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 8))
+    end_longitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(11, 8))
+    end_location_name: Mapped[Optional[str]] = mapped_column(String(200))
     location_name: Mapped[Optional[str]] = mapped_column(String(200))
     latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 8))
     longitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(11, 8))
     distance_km: Mapped[Optional[float]] = mapped_column(Numeric(10, 2))
-    total_distance_meters: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
     calories_burned: Mapped[Optional[int]] = mapped_column(Integer)
     completion_status: Mapped[Optional[str]] = mapped_column(String(30))
     status: Mapped[Optional[str]] = mapped_column(String(30))
@@ -65,6 +89,22 @@ class Activities(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class GpsPoints(Base):
+    __tablename__ = "gps_points"
+
+    id: Mapped[int] = mapped_column("point_id", Integer, primary_key=True)
+    activity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    latitude: Mapped[Decimal] = mapped_column(Numeric(10, 8), nullable=False)
+    longitude: Mapped[Decimal] = mapped_column(Numeric(11, 8), nullable=False)
+    altitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    speed_ms: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    accuracy_meters: Mapped[Optional[int]] = mapped_column(Integer)
+    heading: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    recorded_at: Mapped[datetime] = mapped_column("timestamp", DateTime, nullable=False)
+    sequence_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class CurrentWeather(Base):
@@ -137,6 +177,7 @@ class WeatherAlerts(Base):
     __tablename__ = "weather_alerts"
 
     id: Mapped[int] = mapped_column("alert_id", Integer, primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer)
     location_name: Mapped[str] = mapped_column(String(200), nullable=False)
     latitude: Mapped[Decimal] = mapped_column(Numeric(10, 8), nullable=False)
     longitude: Mapped[Decimal] = mapped_column(Numeric(11, 8), nullable=False)
@@ -184,6 +225,44 @@ class WeatherRecommendations(Base):
     precipitation_status: Mapped[Optional[str]] = mapped_column(String(50))
     visibility_status: Mapped[Optional[str]] = mapped_column(String(50))
     uv_status: Mapped[Optional[str]] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class FavoriteLocations(Base):
+    __tablename__ = "favorite_locations"
+
+    id: Mapped[int] = mapped_column("location_id", Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    location_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    latitude: Mapped[Decimal] = mapped_column(Numeric(10, 8), nullable=False)
+    longitude: Mapped[Decimal] = mapped_column(Numeric(11, 8), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500))
+    icon_url: Mapped[Optional[str]] = mapped_column(String(500))
+    visit_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class ActivityStatistics(Base):
+    __tablename__ = "activity_statistics"
+
+    id: Mapped[int] = mapped_column("stat_id", Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    mode_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    stat_date: Mapped[date] = mapped_column(Date, nullable=False)
+    activities_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_distance_meters: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    total_duration_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    avg_speed_ms: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    total_elevation_gain_meters: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=0)
+    avg_temperature: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    avg_humidity: Mapped[Optional[int]] = mapped_column(Integer)
+    avg_wind_speed: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
