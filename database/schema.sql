@@ -29,9 +29,7 @@ CREATE TABLE users (
     phone VARCHAR(20) COMMENT '電話號碼',
     date_of_birth DATE COMMENT '出生日期',
     gender ENUM('male', 'female', 'other') COMMENT '性別',
-    country VARCHAR(50) COMM0
-    .
-    ENT '國家',
+    country VARCHAR(50) COMMENT '國家',
     city VARCHAR(50) COMMENT '城市',
     is_active BOOLEAN DEFAULT TRUE COMMENT '帳號是否啟用',
     last_login DATETIME COMMENT '最後登入時間',
@@ -199,6 +197,7 @@ CREATE TABLE weather_forecast (
     humidity INT COMMENT '預報濕度 (%)',
     wind_speed DECIMAL(5, 2) COMMENT '預報風速 (m/s)',
     wind_direction INT COMMENT '預報風向 (0-360度)',
+    wind_direction_description VARCHAR(20) COMMENT '預報風向文字描述',
     
     -- 降水
     precipitation_probability INT COMMENT '降雨機率 (%)',
@@ -240,6 +239,7 @@ CREATE TABLE weather_history (
     humidity INT COMMENT '平均濕度 (%)',
     wind_speed DECIMAL(5, 2) COMMENT '平均風速 (m/s)',
     wind_direction INT COMMENT '主風向',
+    wind_direction_description VARCHAR(20) COMMENT '主風向文字描述',
     
     -- 降水
     precipitation DECIMAL(6, 2) COMMENT '降水量 (mm)',
@@ -272,6 +272,7 @@ CREATE TABLE activity_weather_snapshots (
     humidity INT COMMENT '濕度快照 (%)',
     wind_speed DECIMAL(5, 2) COMMENT '風速快照 (m/s)',
     wind_direction INT COMMENT '風向快照',
+    wind_direction_description VARCHAR(20) COMMENT '風向文字快照',
     precipitation DECIMAL(6, 2) COMMENT '降水量快照 (mm)',
     precipitation_probability INT COMMENT '降雨機率快照 (%)',
     visibility INT COMMENT '能見度快照 (m)',

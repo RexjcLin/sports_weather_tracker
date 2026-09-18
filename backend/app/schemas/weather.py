@@ -75,6 +75,8 @@ class WeatherForecastBase(BaseModel):
     precipitation_probability: int = Field(
         ..., ge=0, le=100, description="降水機率 (%)"
     )
+    wind_direction: Optional[int] = Field(None, description="風向角度 (0-360度)")
+    wind_direction_description: Optional[str] = Field(None, description="風向文字描述")
     weather_main: str = Field(..., description="天氣主分類")
     weather_description: str = Field(..., description="天氣描述")
 

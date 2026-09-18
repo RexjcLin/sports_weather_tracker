@@ -361,6 +361,7 @@ class CWBWeatherService:
             max_temps = {}
             min_temps = {}
             pops = {}
+            wind_descriptions = {}
             for weather_element in location_data.get("weatherElement", location_data.get("WeatherElement", [])):
                 element_name = weather_element.get("elementName", weather_element.get("ElementName"))
                 time_periods = weather_element.get("time", weather_element.get("Time", []))
@@ -382,11 +383,18 @@ class CWBWeatherService:
                         for item in time_periods
                         if self._get_forecast_value(item) is not None
                     }
+                elif element_name == "Wind":
+                    wind_descriptions = {
+                        item.get("startTime", item.get("StartTime")): self._get_forecast_value(item)
+                        for item in time_periods
+                        if self._get_forecast_value(item) is not None
+                    }
             
             # 創建預報記錄
             for time_str, max_temp in max_temps.items():
                 min_temp = min_temps.get(time_str, "0")
                 pop = pops.get(time_str, "0")
+                wind_description = wind_descriptions.get(time_str)
                 
                 forecast_time = datetime.fromisoformat(time_str.replace("Z", "+00:00")).replace(tzinfo=None)
                 
@@ -398,6 +406,7 @@ class CWBWeatherService:
                     temperature_max=Decimal(max_temp),
                     temperature_min=Decimal(min_temp),
                     precipitation_probability=int(pop),
+                    wind_direction_description=wind_description,
                     weather_main="Forecast",
                     weather_description=f"最高 {max_temp}°C，最低 {min_temp}°C",
                     forecast_issued_at=datetime.now(),
