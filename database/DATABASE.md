@@ -50,11 +50,12 @@
      alerts
 ```
 
-### 表清單 (13 張表)
+### 表清單 (14 張表)
 
 | 模塊 | 表名 | 用途 | 記錄數量預期 |
 |-----|------|------|-----------|
 | **用戶** | users | 用戶帳號和個人資訊 | 低 (數千) |
+| | user_sessions | JWT refresh token session 和撤銷狀態 | 低 (每個登入裝置一筆) |
 | | favorite_locations | 用戶最愛位置 | 低 (數百) |
 | | weather_alerts | 天氣警告通知 | 中 (數萬) |
 | **運動** | sport_modes | 運動模式定義 | 極低 (3筆) |
@@ -114,9 +115,25 @@ created_at / updated_at   -- 建立/更新時間
 3. 單車 - 自行車騎乘，需要注意風力和路面濕度
 ```
 
+### 3. user_sessions (JWT 登入 session 表)
+**用途**：保存 refresh token 的雜湊值，以及登入 session 的效期和撤銷狀態。資料庫不保存 refresh token 明碼。
+
+```text
+session_id / user_id             -- session 和使用者識別符
+refresh_token_hash               -- refresh token 雜湊值
+issued_at / expires_at           -- 發行和到期時間
+revoked_at                       -- 登出撤銷時間，可為 NULL
+device_info                      -- 裝置資訊，可為 NULL
+created_at                       -- 建立時間
+```
+
+**索引**：
+- `idx_user_id` - 查詢使用者的登入 session
+- `idx_refresh_token_hash` - 依 refresh token 雜湊值查詢 session
+
 ---
 
-### 3. activities (運動記錄主表)
+### 4. activities (運動記錄主表)
 **用途**：存儲運動記錄的主要信息
 
 ```sql

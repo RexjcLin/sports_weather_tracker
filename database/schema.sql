@@ -41,7 +41,23 @@ CREATE TABLE users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用戶信息表';
 
 -- =====================================================
--- 3. 運動模式表 (sport_modes)
+-- 3. JWT 登入 session 表 (user_sessions)
+-- =====================================================
+CREATE TABLE user_sessions (
+    session_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL COMMENT '用戶ID',
+    refresh_token_hash VARCHAR(255) NOT NULL COMMENT 'refresh token 雜湊值',
+    issued_at DATETIME NOT NULL COMMENT '簽發時間',
+    expires_at DATETIME NOT NULL COMMENT '到期時間',
+    revoked_at DATETIME NULL COMMENT '撤銷時間',
+    device_info VARCHAR(200) NULL COMMENT '裝置資訊',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '建立時間',
+    INDEX idx_user_id (user_id),
+    INDEX idx_refresh_token_hash (refresh_token_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='JWT refresh token session 表';
+
+-- =====================================================
+-- 4. 運動模式表 (sport_modes)
 -- =====================================================
 CREATE TABLE sport_modes (
     mode_id INT AUTO_INCREMENT PRIMARY KEY,
