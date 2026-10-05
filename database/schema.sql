@@ -373,6 +373,7 @@ CREATE TABLE activity_statistics (
     user_id INT NOT NULL COMMENT '用戶ID',
     mode_id INT NOT NULL COMMENT '運動模式ID',
     stat_date DATE NOT NULL COMMENT '統計日期',
+    stat_period VARCHAR(10) NOT NULL DEFAULT 'daily' COMMENT '統計週期: daily/monthly',
     
     -- 統計數據
     activities_count INT DEFAULT 0 COMMENT '運動次數',
@@ -393,7 +394,7 @@ CREATE TABLE activity_statistics (
     -- 外鍵和索引
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (mode_id) REFERENCES sport_modes(mode_id),
-    UNIQUE INDEX idx_user_mode_date (user_id, mode_id, stat_date)
+    UNIQUE INDEX idx_user_mode_date (user_id, mode_id, stat_date, stat_period)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='活動統計表';
 
 -- =====================================================

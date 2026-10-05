@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, List, Optional
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Integer, JSON, Numeric, String, Text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -84,6 +84,7 @@ class Activities(Base):
     actual_duration: Mapped[Optional[int]] = mapped_column(Integer)
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
     total_distance_meters: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    total_elevation_gain_meters: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
     start_latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 8))
     start_longitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(11, 8))
     start_location_name: Mapped[Optional[str]] = mapped_column(String(200))
@@ -269,11 +270,15 @@ class FavoriteLocations(Base):
 
 class ActivityStatistics(Base):
     __tablename__ = "activity_statistics"
+    __table_args__ = (
+        UniqueConstraint("user_id", "mode_id", "stat_date", "stat_period", name="idx_user_mode_date"),
+    )
 
     id: Mapped[int] = mapped_column("stat_id", Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False)
     mode_id: Mapped[int] = mapped_column(Integer, nullable=False)
     stat_date: Mapped[date] = mapped_column(Date, nullable=False)
+    stat_period: Mapped[str] = mapped_column(String(10), default="daily", server_default="daily", nullable=False)
     activities_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_distance_meters: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     total_duration_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

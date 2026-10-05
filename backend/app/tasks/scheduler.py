@@ -19,6 +19,9 @@ from apscheduler.triggers.cron import CronTrigger
 from app.database import get_db_session
 from app.services.weather_service import CWBWeatherService
 from app.services.recommendation_engine import RecommendationEngine
+from app.services.activity_statistics_service import (
+    TAIPEI_TIMEZONE, generate_monthly_statistics, previous_month_start,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +195,16 @@ async def cleanup_expired_alerts():
         logger.error(f"清理過期警告失敗: {str(e)}")
 
 
+async def generate_monthly_activity_statistics():
+    month = previous_month_start(datetime.now(TAIPEI_TIMEZONE).date())
+    try:
+        async with get_db_session() as db:
+            count = await generate_monthly_statistics(db, month)
+        logger.info("Generated %s monthly activity summaries for %s", count, month)
+    except Exception:
+        logger.exception("Failed to generate monthly activity summaries for %s", month)
+
+
 def configure_scheduler():
     """
     配置所有定時任務
@@ -249,13 +262,26 @@ def configure_scheduler():
         misfire_grace_time=600
     )
     
-    logger.info("定時任務配置完成，共 5 個任務")
+    scheduler.add_job(
+        generate_monthly_activity_statistics,
+        trigger=CronTrigger(day=1, hour=0, minute=10, timezone="Asia/Taipei"),
+        id="generate_monthly_activity_statistics",
+        name="Monthly activity statistics",
+        replace_existing=True,
+        next_run_time=datetime.now(TAIPEI_TIMEZONE),
+        misfire_grace_time=86400,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    logger.info("定時任務配置完成，共 6 個任務")
     logger.info("任務列表:")
     logger.info("  1. 更新天氣數據 - 每 30 分鐘")
     logger.info("  2. 清理舊天氣數據 - 每天凌晨 2:00")
     logger.info("  3. 檢查氣象警告 - 每 15 分鐘")
     logger.info("  4. 生成運動建議 - 每小時")
     logger.info("  5. 清理過期警告 - 每小時")
+    logger.info("  6. 月運動統計 - 每月 1 日 00:10 (Asia/Taipei)，啟動時補算上個月")
 
 
 def get_scheduler_manager() -> SchedulerManager:

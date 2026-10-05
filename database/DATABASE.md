@@ -397,13 +397,14 @@ created_at / updated_at        -- 建立/更新時間
 ---
 
 ### 11. activity_statistics (活動統計表)
-**用途**：預計算用戶的每日/週/月運動統計
+**用途**：保存用戶每日與每月的運動統計；週統計可另行查詢彙總。
 
 ```sql
 stat_id (PK, BIGINT)                   -- 統計記錄ID
 user_id (FK)                           -- 用戶ID
 mode_id (FK)                           -- 運動模式ID
 stat_date                              -- 統計日期
+stat_period                            -- daily / monthly；每月紀錄的日期為該月 1 日
 
 -- 數量統計
 activities_count                       -- 該模式運動次數
@@ -420,7 +421,68 @@ avg_wind_speed                         -- 平均風速 (m/s)
 created_at / updated_at                -- 建立/更新時間
 ```
 
-**UNIQUE 索引**：`(user_id, mode_id, stat_date)` - 確保每天每個用戶每種模式只有一筆統計
+**UNIQUE 索引**：`(user_id, mode_id, stat_date, stat_period)` - 確保每個用戶每種模式在同一統計週期只有一筆紀錄，每日與每月資料可共存。
+
+#### 每月自動產生紀錄
+
+後端 APScheduler 每月 **1 日 00:10（Asia/Taipei）**，彙總上個月所有 `status = 'completed'` 的活動。後端啟動時也會立即補算上個月，重跑會更新既有紀錄，不會重複新增。没有完成活動的使用者／模式不會產生零值月紀錄。
+
+- 依 `user_id`、`mode_id` 分組，以活動 `start_time` 決定所屬月份，使用資料庫儲存的時間值，不另做時區轉換；跨月活動全部歸入開始月份。
+- 次數、距離、時長與上升海拔從 `activities` 加總；平均速度為總距離除以總時長，零時長時為 `NULL`。
+- 溫度、濕度與風速為符合活動的所有天氣快照平均值；沒有快照或數值時為 `NULL`。
+- 月統計不會覆蓋每日資料；現有 `update_user_statistics` 程序仍只處理每日統計。
+
+既有資料庫需先執行一次 migration（在資料庫主機的專案根目錄執行）：
+
+```bash
+mysql -u root -p sports_weather_tracker < database/migrations/006_add_monthly_activity_statistics.sql
+```
+
+新資料庫使用更新後的 `schema.sql` 即可，不需再執行此 migration。`init_db()` 不會修改既有表結構。後端需持續運行才能在排定時間執行任務，建議只啟動一個排程執行個體。啟動補算僅涵蓋上個月，不會自動回補更早的月份；已封存月份有補登或修改活動時，需重新呼叫月統計服務。
+
+查詢每月紀錄：
+
+```sql
+SELECT * FROM activity_statistics
+WHERE user_id = 1 AND stat_period = 'monthly'
+ORDER BY stat_date DESC;
+```
+
+#### 2026 年 9 月測試資料
+
+在專案根目錄執行以下指令，預設會在系統暫存目錄建立獨立 SQLite 測試資料庫，匯入資料、產生月統計並自動核對預期值，不會連線到正式資料庫：
+
+```bash
+python backend/scripts/seed_september_2026.py
+```
+
+要測試目前設定的 MySQL／MariaDB 與自動排程，先完成 migration，再於 `backend` 目錄執行（使用該目錄的 `.env`）：
+
+```bash
+python scripts/seed_september_2026.py --use-configured-database --seed-only
+```
+
+此指令只匯入活動與快照，不直接產生月統計。於 **2026 年 10 月** 重啟後端，啟動任務便會補算 9 月資料；其他月份可拿掉 `--seed-only`，直接產生並驗證 9 月月統計，但那不驗證排程觸發。
+
+測試帳號為 `monthly_stats_test_202609`（停用帳號），活動標題以 `[TEST-202609]` 開頭；共 10 筆活動、7 筆天氣快照。包含 6 筆 9 月完成活動、取消／進行中的活動，以及 8 月／10 月邊界資料。重複執行不會重複新增這些測試資料。
+
+| 模式 | 完成次數 | 總距離（米） | 總時長（秒） | 上升海拔（米） | 平均速度（m/s） |
+|------|----------|--------------|--------------|----------------|-----------------|
+| 健走 | 2 | 8000 | 5400 | 80 | 1.48 |
+| 爬山 | 2 | 10000 | 12000 | 1000 | 0.83 |
+| 單車 | 2 | 50000 | 9000 | 300 | 5.56 |
+
+查詢自動產生的測試月紀錄：
+
+```sql
+SELECT sm.mode_name, stats.*
+FROM activity_statistics AS stats
+JOIN users AS u ON u.user_id = stats.user_id
+JOIN sport_modes AS sm ON sm.mode_id = stats.mode_id
+WHERE u.username = 'monthly_stats_test_202609'
+   AND stats.stat_period = 'monthly'
+   AND stats.stat_date = '2026-09-01';
+```
 
 ---
 
