@@ -1,4 +1,4 @@
-"""Generate monthly summaries without mixing them with daily statistics."""
+"""Generate weekly summaries without mixing them with daily statistics."""
 
 from datetime import date, datetime, timedelta, timezone
 
@@ -12,18 +12,22 @@ from app.models import Activities, ActivityStatistics, ActivityWeatherSnapshots
 TAIPEI_TIMEZONE = timezone(timedelta(hours=8))
 
 
-def previous_month_start(today: date) -> date:
-    return (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+def week_start(day: date) -> date:
+    return day - timedelta(days=day.weekday())
 
 
-async def generate_monthly_statistics(db: AsyncSession, month: date) -> int:
-    month_start = month.replace(day=1)
-    month_end = (month_start + timedelta(days=32)).replace(day=1)
+def previous_week_start(today: date) -> date:
+    return week_start(today) - timedelta(days=7)
+
+
+async def generate_weekly_statistics(db: AsyncSession, day: date) -> int:
+    period_start = week_start(day)
+    period_end = period_start + timedelta(days=7)
     filters = (
         Activities.status == "completed",
         Activities.user_id.is_not(None),
-        Activities.start_time >= datetime.combine(month_start, datetime.min.time()),
-        Activities.start_time < datetime.combine(month_end, datetime.min.time()),
+        Activities.start_time >= datetime.combine(period_start, datetime.min.time()),
+        Activities.start_time < datetime.combine(period_end, datetime.min.time()),
     )
     totals = (await db.execute(
         select(
@@ -46,8 +50,8 @@ async def generate_monthly_statistics(db: AsyncSession, month: date) -> int:
     weather_by_key = {(row["user_id"], row["mode_id"]): row for row in weather}
     keys = [(row["user_id"], row["mode_id"]) for row in totals]
     stale = delete(ActivityStatistics).where(
-        ActivityStatistics.stat_period == "monthly",
-        ActivityStatistics.stat_date == month_start,
+        ActivityStatistics.stat_period == "weekly",
+        ActivityStatistics.stat_date == period_start,
     )
     if keys:
         stale = stale.where(tuple_(ActivityStatistics.user_id, ActivityStatistics.mode_id).not_in(keys))
@@ -58,8 +62,8 @@ async def generate_monthly_statistics(db: AsyncSession, month: date) -> int:
         key = (row["user_id"], row["mode_id"])
         weather_row = weather_by_key.get(key, {})
         values.update(
-            stat_date=month_start,
-            stat_period="monthly",
+            stat_date=period_start,
+            stat_period="weekly",
             avg_speed_ms=(row["total_distance_meters"] / row["total_duration_seconds"]
                           if row["total_duration_seconds"] > 0 else None),
             avg_temperature=weather_row.get("avg_temperature"),

@@ -373,7 +373,7 @@ CREATE TABLE activity_statistics (
     user_id INT NOT NULL COMMENT '用戶ID',
     mode_id INT NOT NULL COMMENT '運動模式ID',
     stat_date DATE NOT NULL COMMENT '統計日期',
-    stat_period VARCHAR(10) NOT NULL DEFAULT 'daily' COMMENT '統計週期: daily/monthly',
+    stat_period VARCHAR(10) NOT NULL DEFAULT 'daily' COMMENT '統計週期: daily/weekly',
     
     -- 統計數據
     activities_count INT DEFAULT 0 COMMENT '運動次數',

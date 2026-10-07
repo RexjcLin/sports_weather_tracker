@@ -20,7 +20,7 @@ from app.database import get_db_session
 from app.services.weather_service import CWBWeatherService
 from app.services.recommendation_engine import RecommendationEngine
 from app.services.activity_statistics_service import (
-    TAIPEI_TIMEZONE, generate_monthly_statistics, previous_month_start,
+    TAIPEI_TIMEZONE, generate_weekly_statistics, previous_week_start,
 )
 
 logger = logging.getLogger(__name__)
@@ -195,14 +195,14 @@ async def cleanup_expired_alerts():
         logger.error(f"清理過期警告失敗: {str(e)}")
 
 
-async def generate_monthly_activity_statistics():
-    month = previous_month_start(datetime.now(TAIPEI_TIMEZONE).date())
+async def generate_weekly_activity_statistics():
+    week = previous_week_start(datetime.now(TAIPEI_TIMEZONE).date())
     try:
         async with get_db_session() as db:
-            count = await generate_monthly_statistics(db, month)
-        logger.info("Generated %s monthly activity summaries for %s", count, month)
+            count = await generate_weekly_statistics(db, week)
+        logger.info("Generated %s weekly activity summaries for week starting %s", count, week)
     except Exception:
-        logger.exception("Failed to generate monthly activity summaries for %s", month)
+        logger.exception("Failed to generate weekly activity summaries for %s", week)
 
 
 def configure_scheduler():
@@ -263,10 +263,10 @@ def configure_scheduler():
     )
     
     scheduler.add_job(
-        generate_monthly_activity_statistics,
-        trigger=CronTrigger(day=1, hour=0, minute=10, timezone="Asia/Taipei"),
-        id="generate_monthly_activity_statistics",
-        name="Monthly activity statistics",
+        generate_weekly_activity_statistics,
+        trigger=CronTrigger(day_of_week="mon", hour=0, minute=10, timezone="Asia/Taipei"),
+        id="generate_weekly_activity_statistics",
+        name="Weekly activity statistics",
         replace_existing=True,
         next_run_time=datetime.now(TAIPEI_TIMEZONE),
         misfire_grace_time=86400,
@@ -281,7 +281,7 @@ def configure_scheduler():
     logger.info("  3. 檢查氣象警告 - 每 15 分鐘")
     logger.info("  4. 生成運動建議 - 每小時")
     logger.info("  5. 清理過期警告 - 每小時")
-    logger.info("  6. 月運動統計 - 每月 1 日 00:10 (Asia/Taipei)，啟動時補算上個月")
+    logger.info("  6. 週運動統計 - 每週一 00:10 (Asia/Taipei)，啟動時補算上週")
 
 
 def get_scheduler_manager() -> SchedulerManager:

@@ -1,4 +1,4 @@
-"""Seed September fixtures and verify their generated monthly statistics."""
+"""Seed September fixtures and verify their generated weekly statistics."""
 
 import argparse
 import asyncio
@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.models import Activities, ActivityStatistics, ActivityWeatherSnapshots, Base, SportModes, Users
-from app.services.activity_statistics_service import generate_monthly_statistics
+from app.services.activity_statistics_service import generate_weekly_statistics
 
 TEST_USERNAME = "monthly_stats_test_202609"
 MODE_NAMES = {"walk": "健走", "hike": "爬山", "bike": "單車"}
@@ -40,9 +40,13 @@ WEATHER_FIXTURES = {
     "bike_2": [(32, 70, 5)],
 }
 EXPECTED = {
-    "walk": (2, Decimal("8000"), 5400, Decimal("80"), Decimal("1.48"), Decimal("28"), 70, Decimal("3")),
-    "hike": (2, Decimal("10000"), 12000, Decimal("1000"), Decimal("0.83"), Decimal("21"), 75, Decimal("2")),
-    "bike": (2, Decimal("50000"), 9000, Decimal("300"), Decimal("5.56"), Decimal("31"), 65, Decimal("4")),
+    ("walk", date(2026, 8, 31)): (1, Decimal("3000"), 1800, Decimal("30"), Decimal("1.67"), Decimal("28"), 70, Decimal("3")),
+    ("hike", date(2026, 8, 31)): (2, Decimal("106000"), 10800, Decimal("600"), Decimal("9.81"), Decimal("20"), 80, Decimal("1")),
+    ("bike", date(2026, 9, 7)): (1, Decimal("20000"), 3600, Decimal("120"), Decimal("5.56"), Decimal("30"), 60, Decimal("3")),
+    ("walk", date(2026, 9, 14)): (1, Decimal("5000"), 3600, Decimal("50"), Decimal("1.39"), Decimal("28"), 70, Decimal("3")),
+    ("bike", date(2026, 9, 21)): (1, Decimal("30000"), 5400, Decimal("180"), Decimal("5.56"), Decimal("32"), 70, Decimal("5")),
+    ("hike", date(2026, 9, 28)): (1, Decimal("4000"), 4800, Decimal("400"), Decimal("0.83"), Decimal("22"), 70, Decimal("3")),
+    ("walk", date(2026, 9, 28)): (1, Decimal("100000"), 3600, Decimal("0"), Decimal("27.78"), None, None, None),
 }
 
 
@@ -98,19 +102,18 @@ async def seed_september_data(db: AsyncSession) -> tuple[int, dict[str, int]]:
 async def verify_september_statistics(db: AsyncSession, user_id: int, modes: dict[str, int]) -> None:
     rows = (await db.scalars(select(ActivityStatistics).where(
         ActivityStatistics.user_id == user_id,
-        ActivityStatistics.stat_date == date(2026, 9, 1),
-        ActivityStatistics.stat_period == "monthly",
+        ActivityStatistics.stat_period == "weekly",
     ).execution_options(populate_existing=True))).all()
-    if len(rows) != 3:
-        raise RuntimeError(f"Expected 3 monthly records, got {len(rows)}")
-    by_mode = {row.mode_id: row for row in rows}
-    for key, expected in EXPECTED.items():
-        row = by_mode[modes[key]]
+    if len(rows) != len(EXPECTED):
+        raise RuntimeError(f"Expected {len(EXPECTED)} weekly records, got {len(rows)}")
+    by_period = {(row.mode_id, row.stat_date): row for row in rows}
+    for (mode_key, week_start), expected in EXPECTED.items():
+        row = by_period[(modes[mode_key], week_start)]
         actual = (row.activities_count, row.total_distance_meters, row.total_duration_seconds,
                   row.total_elevation_gain_meters, row.avg_speed_ms, row.avg_temperature,
                   row.avg_humidity, row.avg_wind_speed)
         if actual != expected:
-            raise RuntimeError(f"{key}: expected {expected}, got {actual}")
+            raise RuntimeError(f"{mode_key} for {week_start}: expected {expected}, got {actual}")
 
 
 async def run(use_configured_database: bool) -> None:
@@ -130,12 +133,14 @@ async def run(use_configured_database: bool) -> None:
                 await connection.run_sync(Base.metadata.create_all)
         async with async_sessionmaker(engine, expire_on_commit=False)() as db:
             user_id, modes = await seed_september_data(db)
-            await generate_monthly_statistics(db, date(2026, 9, 1))
+            for monday in (date(2026, 8, 31), date(2026, 9, 7), date(2026, 9, 14),
+                           date(2026, 9, 21), date(2026, 9, 28)):
+                await generate_weekly_statistics(db, monday)
             await verify_september_statistics(db, user_id, modes)
             print(f"PASS: user_id={user_id}, username={TEST_USERNAME}; 10 activities, 7 snapshots.")
-            print("mode | count | distance_m | duration_s | elevation_m | speed_m/s | temp_C | humidity | wind_m/s")
-            for key, expected in EXPECTED.items():
-                print(" | ".join([key, *(str(value) for value in expected)]))
+            print("mode | week_start | count | distance_m | duration_s | elevation_m | speed_m/s | temp_C | humidity | wind_m/s")
+            for (mode_key, week_start), expected in EXPECTED.items():
+                print(" | ".join([mode_key, str(week_start), *(str(value) for value in expected)]))
     finally:
         await engine.dispose()
 
