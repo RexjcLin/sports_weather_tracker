@@ -27,6 +27,7 @@ class ActivityCreate(BaseModel):
     start_time: datetime
     end_time: datetime
     total_distance_meters: Decimal = Field(ge=0)
+    steps_count: int | None = Field(default=None, ge=0)
     start_latitude: Decimal
     start_longitude: Decimal
     end_latitude: Decimal

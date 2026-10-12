@@ -33,6 +33,7 @@ async def generate_weekly_statistics(db: AsyncSession, day: date) -> int:
         select(
             Activities.user_id, Activities.mode_id,
             func.count().label("activities_count"),
+            func.coalesce(func.sum(Activities.steps_count), 0).label("total_steps"),
             func.coalesce(func.sum(Activities.total_distance_meters), 0).label("total_distance_meters"),
             func.coalesce(func.sum(Activities.duration_seconds), 0).label("total_duration_seconds"),
             func.coalesce(func.sum(Activities.total_elevation_gain_meters), 0).label("total_elevation_gain_meters"),

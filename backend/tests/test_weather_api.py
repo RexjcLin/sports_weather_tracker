@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from app.main import app
 from app.database import get_db, Base
 from app.models import (
-    CurrentWeather, WeatherForecast, WeatherAlerts,
+    CurrentWeather, Users, WeatherForecast, WeatherAlerts,
     WeatherRecommendations, SportModes, Activities
 )
 from app.schemas.weather import (
@@ -262,6 +262,51 @@ async def test_get_all_current_weather_with_limit(client, sample_current_weather
     assert response.status_code == 200
     data = response.json()
     assert len(data) <= 10
+
+
+@pytest.mark.asyncio
+async def test_create_activity_persists_steps():
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        async with sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)() as db_session:
+            user = Users(username="step_user", email="steps@example.com", password_hash="hashed")
+            mode = SportModes(mode_name="健走")
+            db_session.add_all([user, mode])
+            await db_session.commit()
+            await db_session.refresh(user)
+            await db_session.refresh(mode)
+
+            async def override_get_db():
+                yield db_session
+
+            app.dependency_overrides[get_db] = override_get_db
+            try:
+                response = await AsyncClient(app=app, base_url="http://test").post(
+                    "/api/v1/activities",
+                    json={
+                        "user_id": user.id,
+                        "mode_id": mode.id,
+                        "title": "晨間健走",
+                        "start_time": "2026-10-12T08:00:00",
+                        "end_time": "2026-10-12T09:00:00",
+                        "total_distance_meters": 4200,
+                        "steps_count": 5600,
+                        "start_latitude": 25.033,
+                        "start_longitude": 121.5653,
+                        "end_latitude": 25.04,
+                        "end_longitude": 121.57,
+                    },
+                )
+            finally:
+                app.dependency_overrides.clear()
+
+            assert response.status_code == 201
+            activity = await db_session.get(Activities, response.json()["activity_id"])
+            assert activity.steps_count == 5600
+    finally:
+        await engine.dispose()
 
 
 # ==================== 天氣預報 API 測試 ====================

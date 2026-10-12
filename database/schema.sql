@@ -83,6 +83,7 @@ CREATE TABLE activities (
     
     -- 距離和速度
     total_distance_meters DECIMAL(10, 2) NOT NULL COMMENT '總距離 (米)',
+    steps_count INT UNSIGNED COMMENT '步數',
     avg_speed_ms DECIMAL(6, 2) COMMENT '平均速度 (m/s)',
     max_speed_ms DECIMAL(6, 2) COMMENT '最大速度 (m/s)',
     
@@ -377,6 +378,7 @@ CREATE TABLE activity_statistics (
     
     -- 統計數據
     activities_count INT DEFAULT 0 COMMENT '運動次數',
+    total_steps BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '總步數',
     total_distance_meters DECIMAL(15, 2) DEFAULT 0 COMMENT '總距離 (米)',
     total_duration_seconds INT DEFAULT 0 COMMENT '總時長 (秒)',
     avg_speed_ms DECIMAL(6, 2) COMMENT '平均速度 (m/s)',
@@ -583,7 +585,7 @@ CREATE PROCEDURE update_user_statistics(
 BEGIN
     INSERT INTO activity_statistics (
         user_id, mode_id, stat_date,
-        activities_count, total_distance_meters,
+        activities_count, total_steps, total_distance_meters,
         total_duration_seconds, avg_speed_ms,
         total_elevation_gain_meters
     )
@@ -592,6 +594,7 @@ BEGIN
         p_mode_id,
         p_stat_date,
         COUNT(*),
+        COALESCE(SUM(steps_count), 0),
         COALESCE(SUM(total_distance_meters), 0),
         COALESCE(SUM(duration_seconds), 0),
         COALESCE(AVG(avg_speed_ms), 0),
@@ -603,6 +606,7 @@ BEGIN
     AND status = 'completed'
     ON DUPLICATE KEY UPDATE
         activities_count = VALUES(activities_count),
+        total_steps = VALUES(total_steps),
         total_distance_meters = VALUES(total_distance_meters),
         total_duration_seconds = VALUES(total_duration_seconds),
         avg_speed_ms = VALUES(avg_speed_ms),

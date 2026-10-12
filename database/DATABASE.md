@@ -148,6 +148,7 @@ duration_seconds                   -- 運動時長
 
 -- 距離和速度
 total_distance_meters              -- 總距離 (米)
+steps_count                        -- 本次活動步數，可為 NULL
 avg_speed_ms / max_speed_ms        -- 平均/最大速度 (m/s)
 
 -- 海拔數據（爬山專用）
@@ -408,6 +409,7 @@ stat_period                            -- daily / weekly；每週紀錄的日期
 
 -- 數量統計
 activities_count                       -- 該模式運動次數
+total_steps                            -- 總步數；沒有步數資料的活動不計入
 total_distance_meters                  -- 總距離 (米)
 total_duration_seconds                 -- 總時長 (秒)
 avg_speed_ms                           -- 平均速度 (m/s)
@@ -428,7 +430,7 @@ created_at / updated_at                -- 建立/更新時間
 後端 APScheduler 每週 **一 00:10（Asia/Taipei）**，彙總上週所有 `status = 'completed'` 的活動。後端啟動時也會立即補算上週，重跑會更新既有紀錄，不會重複新增。沒有完成活動的使用者／模式不會產生零值週紀錄。
 
 - 依 `user_id`、`mode_id` 分組，以活動 `start_time` 決定所屬週；週一 00:00 至下週一 00:00 為一週，使用資料庫儲存的時間值，不另做時區轉換；跨週活動歸入開始週。
-- 次數、距離、時長與上升海拔從 `activities` 加總；平均速度為總距離除以總時長，零時長時為 `NULL`。
+- 次數、步數、距離、時長與上升海拔從 `activities` 加總；未提供步數的活動不計入步數總和；平均速度為總距離除以總時長，零時長時為 `NULL`。
 - 溫度、濕度與風速為符合活動的所有天氣快照平均值；沒有快照或數值時為 `NULL`。
 - 週統計不會覆蓋每日資料；現有 `update_user_statistics` 程序仍只處理每日統計。
 
@@ -436,6 +438,12 @@ created_at / updated_at                -- 建立/更新時間
 
 ```bash
 mysql -u root -p sports_weather_tracker < database/migrations/006_add_monthly_activity_statistics.sql
+```
+
+既有資料庫完成上述 migration 後，還需套用步數欄位及每日統計程序更新：
+
+```bash
+mysql -u root -p sports_weather_tracker < database/migrations/007_add_activity_steps.sql
 ```
 
 新資料庫使用更新後的 `schema.sql` 即可。`init_db()` 不會修改既有表結構。後端需持續運行才能在排定時間執行任務，建議只啟動一個排程執行個體。啟動補算僅涵蓋上週，不會自動回補更早週期；如需重算其他週，呼叫週統計服務並傳入該週任一天即可。

@@ -42,19 +42,19 @@ async def test_weekly_statistics_boundaries_weather_and_reruns():
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
         async with async_sessionmaker(engine, expire_on_commit=False)() as db:
-            for activity_id, user_id, mode_id, started, status, distance, duration in [
-                (1, 1, 2, datetime(2026, 9, 1), "completed", 1000, 1000),
-                (2, 1, 2, datetime(2026, 9, 30, 23, 59), "completed", 3000, 1000),
-                (3, 1, 2, datetime(2026, 10, 1), "completed", 9000, 1000),
-                (4, 1, 2, datetime(2026, 8, 31), "completed", 9000, 1000),
-                (5, 1, 2, datetime(2026, 9, 15), "active", 9000, 1000),
-                (6, 2, 1, datetime(2026, 9, 15), "completed", 2000, 0),
-                (7, None, 2, datetime(2026, 9, 15), "completed", 9000, 1000),
+            for activity_id, user_id, mode_id, started, status, distance, duration, steps in [
+                (1, 1, 2, datetime(2026, 9, 1), "completed", 1000, 1000, 1200),
+                (2, 1, 2, datetime(2026, 9, 30, 23, 59), "completed", 3000, 1000, 2400),
+                (3, 1, 2, datetime(2026, 10, 1), "completed", 9000, 1000, 8000),
+                (4, 1, 2, datetime(2026, 8, 31), "completed", 9000, 1000, 7000),
+                (5, 1, 2, datetime(2026, 9, 15), "active", 9000, 1000, 5000),
+                (6, 2, 1, datetime(2026, 9, 15), "completed", 2000, 0, None),
+                (7, None, 2, datetime(2026, 9, 15), "completed", 9000, 1000, 3000),
             ]:
                 db.add(Activities(id=activity_id, user_id=user_id, mode_id=mode_id,
                                   start_time=started, end_time=started, status=status,
                                   total_distance_meters=distance, duration_seconds=duration,
-                                  total_elevation_gain_meters=100))
+                                  steps_count=steps, total_elevation_gain_meters=100))
             db.add(ActivityStatistics(user_id=1, mode_id=2, stat_date=date(2026, 9, 1),
                                       activities_count=1, stat_period="daily"))
             for snapshot_id, temperature in [(1, 20), (2, 30)]:
@@ -69,6 +69,7 @@ async def test_weekly_statistics_boundaries_weather_and_reruns():
             weekly = next(row for row in rows if row.user_id == 1 and row.stat_period == "weekly")
             assert weekly.stat_date == date(2026, 8, 31)
             assert weekly.activities_count == 2
+            assert weekly.total_steps == 8200
             assert weekly.total_distance_meters == Decimal("10000")
             assert weekly.total_duration_seconds == 2000
             assert weekly.total_elevation_gain_meters == Decimal("200")
@@ -88,10 +89,12 @@ async def test_weekly_statistics_boundaries_weather_and_reruns():
 
             activity = await db.get(Activities, 1)
             activity.total_distance_meters = Decimal("2000")
+            activity.steps_count = 1500
             await db.commit()
             await generate_weekly_statistics(db, date(2026, 9, 1))
             await db.refresh(weekly)
             assert weekly.total_distance_meters == Decimal("11000")
+            assert weekly.total_steps == 8500
 
             for activity in (await db.scalars(select(Activities))).all():
                 activity.status = "cancelled"
