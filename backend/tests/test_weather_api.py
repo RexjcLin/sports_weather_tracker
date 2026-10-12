@@ -5,11 +5,13 @@
 
 import pytest
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import AsyncGenerator
 
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -305,6 +307,54 @@ async def test_create_activity_persists_steps():
             assert response.status_code == 201
             activity = await db_session.get(Activities, response.json()["activity_id"])
             assert activity.steps_count == 5600
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_clean_old_weather_data_removes_only_expired_weather(monkeypatch):
+    from app.tasks import scheduler
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+    session_factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        async with session_factory() as db_session:
+            now = datetime.now()
+            old_fetch = now - timedelta(days=8)
+            fresh_fetch = now - timedelta(days=6)
+            db_session.add_all([
+                CurrentWeather(location_name="old", latitude=25, longitude=121,
+                               temperature=25, humidity=60, wind_speed=1,
+                               data_time=old_fetch, fetched_at=old_fetch),
+                CurrentWeather(location_name="fresh", latitude=25, longitude=121,
+                               temperature=25, humidity=60, wind_speed=1,
+                               data_time=fresh_fetch, fetched_at=fresh_fetch),
+                WeatherForecast(location_name="expired", latitude=25, longitude=121,
+                               forecast_time=now - timedelta(hours=1), forecast_issued_at=now),
+                WeatherForecast(location_name="upcoming", latitude=25, longitude=121,
+                               forecast_time=now + timedelta(hours=1), forecast_issued_at=now),
+            ])
+            await db_session.commit()
+
+        @asynccontextmanager
+        async def isolated_session():
+            async with session_factory() as db_session:
+                yield db_session
+
+        monkeypatch.setattr(scheduler, "get_db_session", isolated_session)
+        await scheduler.clean_old_weather_data()
+
+        async with session_factory() as db_session:
+            current_names = set((await db_session.scalars(
+                select(CurrentWeather.location_name)
+            )).all())
+            forecast_names = set((await db_session.scalars(
+                select(WeatherForecast.location_name)
+            )).all())
+        assert current_names == {"fresh"}
+        assert forecast_names == {"upcoming"}
     finally:
         await engine.dispose()
 
